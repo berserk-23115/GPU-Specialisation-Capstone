@@ -1,11 +1,15 @@
 #include <iostream>
 #include <string>
 #include <vector>
-#include <chrono>
-#include <thread>
-#include <memory>
+#include <ctime>           // Replace chrono with simple C time
+#include <cstdlib>         // For basic utilities
 #include <cuda_runtime.h>
-#include <opencv2/opencv.hpp>
+// Replace opencv2/opencv.hpp with specific minimal headers
+#include <opencv2/core.hpp>
+#include <opencv2/imgproc.hpp>
+#include <opencv2/imgcodecs.hpp>
+#include <opencv2/videoio.hpp>
+#include <opencv2/highgui.hpp>
 
 #include "cuda_utils.h"
 #include "kernels.h"
@@ -165,15 +169,15 @@ void runBenchmark(VideoProcessor& processor, const std::string& input) {
     std::cout << "--------------------------------" << std::endl;
     
     for (size_t i = 0; i < filters.size(); i++) {
-        auto start = std::chrono::high_resolution_clock::now();
+        clock_t start = clock();
         
         // Process frame 1000 times to get a reliable measurement
         for (int j = 0; j < 1000; j++) {
             processor.processFrame(frame, outputFrame, filters[i], params);
         }
         
-        auto end = std::chrono::high_resolution_clock::now();
-        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+        clock_t end = clock();
+        double duration = ((double)(end - start) / CLOCKS_PER_SEC) * 1000.0;
         
         std::cout << filterNames[i] << ": " << duration << " ms (for 1000 frames)" << std::endl;
         std::cout << "   Average per frame: " << duration / 1000.0 << " ms" << std::endl;
@@ -188,15 +192,15 @@ void runBenchmark(VideoProcessor& processor, const std::string& input) {
     std::cout << "-----------------------------------------" << std::endl;
     
     for (size_t i = 0; i < filters.size(); i++) {
-        auto start = std::chrono::high_resolution_clock::now();
+        clock_t start = clock();
         
         // Process batch 200 times
         for (int j = 0; j < 200; j++) {
             processor.processBatch(batchFrames, batchOutputs, filters[i], params);
         }
         
-        auto end = std::chrono::high_resolution_clock::now();
-        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+        clock_t end = clock();
+        double duration = ((double)(end - start) / CLOCKS_PER_SEC) * 1000.0;
         
         std::cout << filterNames[i] << ": " << duration << " ms (for 200*5=1000 frames)" << std::endl;
         std::cout << "   Average per frame: " << duration / 1000.0 << " ms" << std::endl;
@@ -283,7 +287,7 @@ int main(int argc, char** argv) {
     
     bool isRunning = true;
     int frameCount = 0;
-    auto startTime = std::chrono::high_resolution_clock::now();
+    clock_t startTime = clock();
     
     while (isRunning) {
         // Read frame
