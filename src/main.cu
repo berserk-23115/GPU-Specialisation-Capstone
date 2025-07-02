@@ -369,8 +369,8 @@ int main(int argc, char** argv) {
     }
     
     // Calculate and print processing time
-    auto endTime = std::chrono::high_resolution_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
+    clock_t endTime = clock();
+    double duration = ((double)(endTime - startTime) / CLOCKS_PER_SEC) * 1000.0;
     double fps = frameCount / (duration / 1000.0);
     
     std::cout << "Processing completed:" << std::endl;
