@@ -18,8 +18,8 @@ set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcompiler=-D_GLIBCXX_USE_CXX11_ABI=0"
 # Disable problematic warnings that can cause compilation errors
 set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcompiler=-w")
 
-# Find packages
-find_package(OpenCV REQUIRED)
+# Find packages - specify required OpenCV components
+find_package(OpenCV REQUIRED COMPONENTS core imgproc imgcodecs videoio highgui)
 
 # Include directories
 include_directories(${OpenCV_INCLUDE_DIRS})
@@ -55,13 +55,21 @@ set_target_properties(video_processor PROPERTIES
 )
 
 # Additional compiler definitions to resolve compatibility issues
-target_compile_definitions(video_processor PRIVATE
-    _GLIBCXX_USE_CXX11_ABI=0
+# Only apply old ABI to CUDA files, let C++ files use default ABI
+set_source_files_properties(${CUDA_SOURCES} PROPERTIES 
+    COMPILE_DEFINITIONS "_GLIBCXX_USE_CXX11_ABI=0"
+)
+
+# Ensure C++ files can link with OpenCV properly
+set_target_properties(video_processor PROPERTIES
+    LINKER_LANGUAGE CXX
 )
 
 # Copy data directory to build directory
 file(COPY ${CMAKE_SOURCE_DIR}/data DESTINATION ${CMAKE_BINARY_DIR})
 
-# Print versions
+# Print debug information
 message(STATUS "OpenCV version: ${OpenCV_VERSION}")
+message(STATUS "OpenCV libraries: ${OpenCV_LIBS}")
+message(STATUS "OpenCV include dirs: ${OpenCV_INCLUDE_DIRS}")
 message(STATUS "CUDA version: ${CMAKE_CUDA_COMPILER_VERSION}") 
