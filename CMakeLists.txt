@@ -28,11 +28,21 @@ include_directories(${CMAKE_SOURCE_DIR}/include)
 # Set CUDA architecture (adjust based on your GPU)
 set(CMAKE_CUDA_ARCHITECTURES 75)
 
-# Add source files
-file(GLOB SOURCES "src/*.cu" "src/*.cpp")
+# Add CUDA source files (no OpenCV includes)
+set(CUDA_SOURCES
+    src/main.cu
+    src/video_io.cu
+    src/kernels.cu
+    src/cuda_utils.cu
+)
+
+# Add C++ source files (with OpenCV includes)
+set(CXX_SOURCES
+    src/video_io_impl.cpp
+)
 
 # Create executable
-add_executable(video_processor ${SOURCES})
+add_executable(video_processor ${CUDA_SOURCES} ${CXX_SOURCES})
 
 # Link libraries
 target_link_libraries(video_processor ${OpenCV_LIBS})

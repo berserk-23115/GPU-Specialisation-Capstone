@@ -1,441 +1,284 @@
 #include "video_io.h"
 #include "cuda_utils.h"
 #include "kernels.h"
-#include <iostream>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
-// Constructor
-VideoProcessor::VideoProcessor() 
-    : width(0), height(0), channels(0), fps(0.0), totalFrames(0), currentFrame(0) {
-}
-
-// Destructor
-VideoProcessor::~VideoProcessor() {
-    close();
-}
-
-// Open a video file or camera
-bool VideoProcessor::openVideo(const std::string& source, bool isFile) {
-    // Close any open video
-    close();
+// C++ implementation functions (defined in video_io_impl.cpp)
+extern "C" {
+    void* create_opencv_processor();
+    void destroy_opencv_processor(void* processor);
+    bool open_opencv_video(void* processor, const char* source, bool isFile);
+    bool open_opencv_output(void* processor, const char* filename);
+    bool is_opencv_video_open(void* processor);
+    int get_opencv_width(void* processor);
+    int get_opencv_height(void* processor);
+    int get_opencv_channels(void* processor);
+    double get_opencv_fps(void* processor);
+    int get_opencv_total_frames(void* processor);
+    int get_opencv_current_frame(void* processor);
+    bool read_opencv_frame(void* processor);
+    bool write_opencv_frame(void* processor);
+    void close_opencv_video(void* processor);
     
-    try {
-        // Open video source
-        if (isFile) {
-            // Open video file
-            if (!videoCapture.open(source)) {
-                std::cerr << "Error: Could not open video file: " << source << std::endl;
-                return false;
-            }
-        } else {
-            // Open camera
-            int cameraIndex = std::stoi(source);
-            if (!videoCapture.open(cameraIndex)) {
-                std::cerr << "Error: Could not open camera: " << cameraIndex << std::endl;
-                return false;
-            }
-        }
-        
-        // Get video properties
-        width = static_cast<int>(videoCapture.get(cv::CAP_PROP_FRAME_WIDTH));
-        height = static_cast<int>(videoCapture.get(cv::CAP_PROP_FRAME_HEIGHT));
-        fps = videoCapture.get(cv::CAP_PROP_FPS);
-        totalFrames = static_cast<int>(videoCapture.get(cv::CAP_PROP_FRAME_COUNT));
-        currentFrame = 0;
-        
-        // Read a frame to determine number of channels
-        cv::Mat frame;
-        if (videoCapture.read(frame)) {
-            channels = frame.channels();
-        } else {
-            channels = 3;  // Default to 3 channels
-        }
-        
-        // Reset video to beginning
-        if (isFile) {
-            videoCapture.set(cv::CAP_PROP_POS_FRAMES, 0);
-        }
-        
-        return true;
-    } catch (const std::exception& e) {
-        std::cerr << "Error opening video source: " << e.what() << std::endl;
-        return false;
-    }
+    // Frame data access
+    unsigned char* get_current_frame_data(void* processor);
+    unsigned char* get_output_frame_data(void* processor);
+    void set_output_frame_data(void* processor, unsigned char* data);
 }
 
-// Open output video file
-bool VideoProcessor::openOutputVideo(const std::string& filename, int codec, double fps) {
-    try {
-        // Get four character code for video codec
-        int fourcc;
-        if (codec == -1) {
-            // Auto-detect from filename extension
-            std::string ext = filename.substr(filename.find_last_of('.') + 1);
-            if (ext == "mp4") {
-                fourcc = cv::VideoWriter::fourcc('m', 'p', '4', 'v');
-            } else if (ext == "avi") {
-                fourcc = cv::VideoWriter::fourcc('M', 'J', 'P', 'G');
-            } else {
-                fourcc = cv::VideoWriter::fourcc('X', 'V', 'I', 'D');
-            }
-        } else {
-            fourcc = codec;
-        }
-        
-        // Use input video's FPS if not specified
-        if (fps < 0) {
-            fps = this->fps;
-        }
-        
-        // Ensure valid FPS
-        if (fps <= 0) {
-            fps = 30.0;
-        }
-        
-        // Create video writer
-        return videoWriter.open(filename, fourcc, fps, cv::Size(width, height), true);
-    } catch (const std::exception& e) {
-        std::cerr << "Error opening output video: " << e.what() << std::endl;
+// VideoProcessor structure
+struct VideoProcessor {
+    void* opencv_processor;  // Opaque pointer to OpenCV implementation
+    unsigned char* current_frame_data;
+    unsigned char* output_frame_data;
+    int width;
+    int height;
+    int channels;
+    size_t frame_size;
+    
+    // CUDA memory buffers
+    unsigned char* d_input_frame;
+    unsigned char* d_output_frame;
+};
+
+// Create video processor
+VideoProcessor* createVideoProcessor() {
+    VideoProcessor* processor = (VideoProcessor*)malloc(sizeof(VideoProcessor));
+    if (!processor) {
+        printf("Error: Could not allocate VideoProcessor\n");
+        return NULL;
+    }
+    
+    // Initialize members
+    processor->opencv_processor = create_opencv_processor();
+    processor->current_frame_data = NULL;
+    processor->output_frame_data = NULL;
+    processor->width = 0;
+    processor->height = 0;
+    processor->channels = 0;
+    processor->frame_size = 0;
+    processor->d_input_frame = NULL;
+    processor->d_output_frame = NULL;
+    
+    if (!processor->opencv_processor) {
+        printf("Error: Could not create OpenCV processor\n");
+        free(processor);
+        return NULL;
+    }
+    
+    return processor;
+}
+
+// Destroy video processor
+void destroyVideoProcessor(VideoProcessor* processor) {
+    if (!processor) return;
+    
+    // Clean up CUDA memory
+    if (processor->d_input_frame) {
+        cudaFree(processor->d_input_frame);
+    }
+    if (processor->d_output_frame) {
+        cudaFree(processor->d_output_frame);
+    }
+    
+    // Clean up host memory
+    if (processor->current_frame_data) {
+        free(processor->current_frame_data);
+    }
+    if (processor->output_frame_data) {
+        free(processor->output_frame_data);
+    }
+    
+    // Clean up OpenCV processor
+    destroy_opencv_processor(processor->opencv_processor);
+    
+    free(processor);
+}
+
+// Open video source
+bool openVideoSource(VideoProcessor* processor, const char* source, bool isFile) {
+    if (!processor || !processor->opencv_processor) {
         return false;
     }
+    
+    if (!open_opencv_video(processor->opencv_processor, source, isFile)) {
+        return false;
+    }
+    
+    // Get video properties
+    processor->width = get_opencv_width(processor->opencv_processor);
+    processor->height = get_opencv_height(processor->opencv_processor);
+    processor->channels = get_opencv_channels(processor->opencv_processor);
+    processor->frame_size = processor->width * processor->height * processor->channels;
+    
+    // Allocate host memory for frame data
+    processor->current_frame_data = (unsigned char*)malloc(processor->frame_size);
+    processor->output_frame_data = (unsigned char*)malloc(processor->frame_size);
+    
+    if (!processor->current_frame_data || !processor->output_frame_data) {
+        printf("Error: Could not allocate frame memory\n");
+        return false;
+    }
+    
+    // Allocate CUDA memory
+    CUDA_CHECK_ERROR(cudaMalloc((void**)&processor->d_input_frame, processor->frame_size));
+    CUDA_CHECK_ERROR(cudaMalloc((void**)&processor->d_output_frame, processor->frame_size));
+    
+    return true;
+}
+
+// Open output video
+bool openVideoOutput(VideoProcessor* processor, const char* filename) {
+    if (!processor || !processor->opencv_processor) {
+        return false;
+    }
+    
+    return open_opencv_output(processor->opencv_processor, filename);
 }
 
 // Check if video is open
-bool VideoProcessor::isVideoOpen() const {
-    return videoCapture.isOpened();
+bool isVideoOpen(VideoProcessor* processor) {
+    if (!processor || !processor->opencv_processor) {
+        return false;
+    }
+    
+    return is_opencv_video_open(processor->opencv_processor);
 }
 
 // Get video properties
-int VideoProcessor::getWidth() const { return width; }
-int VideoProcessor::getHeight() const { return height; }
-int VideoProcessor::getChannels() const { return channels; }
-double VideoProcessor::getFPS() const { return fps; }
-int VideoProcessor::getTotalFrames() const { return totalFrames; }
-
-// Get current frame number
-int VideoProcessor::getCurrentFrame() const {
-    return currentFrame;
+int getVideoWidth(VideoProcessor* processor) {
+    return processor ? processor->width : 0;
 }
 
-// Read a frame from video
-bool VideoProcessor::readFrame(cv::Mat& frame) {
-    if (!videoCapture.isOpened()) {
+int getVideoHeight(VideoProcessor* processor) {
+    return processor ? processor->height : 0;
+}
+
+int getVideoChannels(VideoProcessor* processor) {
+    return processor ? processor->channels : 0;
+}
+
+double getVideoFPS(VideoProcessor* processor) {
+    if (!processor || !processor->opencv_processor) {
+        return 0.0;
+    }
+    
+    return get_opencv_fps(processor->opencv_processor);
+}
+
+int getVideoTotalFrames(VideoProcessor* processor) {
+    if (!processor || !processor->opencv_processor) {
+        return 0;
+    }
+    
+    return get_opencv_total_frames(processor->opencv_processor);
+}
+
+int getVideoCurrentFrame(VideoProcessor* processor) {
+    if (!processor || !processor->opencv_processor) {
+        return 0;
+    }
+    
+    return get_opencv_current_frame(processor->opencv_processor);
+}
+
+// Read video frame
+bool readVideoFrame(VideoProcessor* processor) {
+    if (!processor || !processor->opencv_processor) {
         return false;
     }
     
-    // Read frame
-    bool success = videoCapture.read(frame);
+    if (!read_opencv_frame(processor->opencv_processor)) {
+        return false;
+    }
     
-    if (success) {
-        currentFrame++;
+    // Get frame data from OpenCV
+    unsigned char* frame_data = get_current_frame_data(processor->opencv_processor);
+    if (!frame_data) {
+        return false;
+    }
+    
+    // Copy to our buffer
+    memcpy(processor->current_frame_data, frame_data, processor->frame_size);
+    
+    return true;
+}
+
+// Write video frame
+bool writeVideoFrame(VideoProcessor* processor) {
+    if (!processor || !processor->opencv_processor) {
+        return false;
+    }
+    
+    // Set output frame data in OpenCV processor
+    set_output_frame_data(processor->opencv_processor, processor->output_frame_data);
+    
+    return write_opencv_frame(processor->opencv_processor);
+}
+
+// Process video frame with CUDA
+bool processVideoFrame(
+    VideoProcessor* processor,
+    FilterType filterType,
+    const FilterParams& filterParams,
+    TransformType transformType
+) {
+    if (!processor || !processor->current_frame_data) {
+        return false;
+    }
+    
+    // Copy input frame to GPU
+    CUDA_CHECK_ERROR(cudaMemcpy(processor->d_input_frame, processor->current_frame_data, 
+                                processor->frame_size, cudaMemcpyHostToDevice));
+    
+    // Apply transformation first if needed
+    if (transformType != TransformType::NONE) {
+        applyTransformation(
+            processor->d_input_frame,
+            processor->d_output_frame,
+            transformType,
+            processor->width,
+            processor->height,
+            processor->channels
+        );
         
-        // Store frame for motion detection
-        if (previousFrame.empty() || previousFrame.size() != frame.size()) {
-            previousFrame = frame.clone();
-        } else {
-            frame.copyTo(previousFrame);
-        }
+        // Swap buffers
+        unsigned char* temp = processor->d_input_frame;
+        processor->d_input_frame = processor->d_output_frame;
+        processor->d_output_frame = temp;
     }
     
-    return success;
-}
-
-// Write frame to output video
-bool VideoProcessor::writeFrame(const cv::Mat& frame) {
-    if (!videoWriter.isOpened()) {
-        return false;
+    // Apply filter if needed
+    if (filterType != FilterType::NONE) {
+        applySpecialFilter(
+            processor->d_input_frame,
+            processor->d_output_frame,
+            filterType,
+            filterParams,
+            processor->width,
+            processor->height,
+            processor->channels
+        );
+    } else {
+        // No filter, just copy input to output
+        CUDA_CHECK_ERROR(cudaMemcpy(processor->d_output_frame, processor->d_input_frame, 
+                                    processor->frame_size, cudaMemcpyDeviceToDevice));
     }
     
-    // Write frame
-    videoWriter.write(frame);
+    // Copy result back to host
+    CUDA_CHECK_ERROR(cudaMemcpy(processor->output_frame_data, processor->d_output_frame, 
+                                processor->frame_size, cudaMemcpyDeviceToHost));
+    
     return true;
 }
 
 // Close video
-void VideoProcessor::close() {
-    if (videoCapture.isOpened()) {
-        videoCapture.release();
+void closeVideo(VideoProcessor* processor) {
+    if (!processor || !processor->opencv_processor) {
+        return;
     }
     
-    if (videoWriter.isOpened()) {
-        videoWriter.release();
-    }
-    
-    // Reset properties
-    width = 0;
-    height = 0;
-    channels = 0;
-    fps = 0.0;
-    totalFrames = 0;
-    currentFrame = 0;
-    
-    // Clear previous frame
-    previousFrame.release();
-}
-
-// Process a frame using CUDA
-bool VideoProcessor::processFrame(
-    const cv::Mat& inputFrame, 
-    cv::Mat& outputFrame,
-    FilterType filterType,
-    const FilterParams& filterParams,
-    TransformType transformType,
-    const void* transformParams
-) {
-    try {
-        // Ensure output frame has same size and type as input
-        if (outputFrame.size() != inputFrame.size() || outputFrame.type() != inputFrame.type()) {
-            outputFrame = cv::Mat(inputFrame.size(), inputFrame.type());
-        }
-        
-        // If no processing is required, just copy the frame
-        if (filterType == FilterType::NONE && transformType == TransformType::NONE) {
-            inputFrame.copyTo(outputFrame);
-            return true;
-        }
-        
-        // Convert to CUDA-compatible format
-        unsigned char* d_inputImage = matToCudaImage(inputFrame);
-        unsigned char* d_outputImage = new unsigned char[inputFrame.total() * inputFrame.channels()];
-        
-        // Apply transformation first if requested
-        if (transformType != TransformType::NONE) {
-            // Apply transformation using CUDA
-            applyTransformation(
-                d_inputImage,
-                d_outputImage,
-                transformType,
-                inputFrame.cols,
-                inputFrame.rows,
-                inputFrame.channels(),
-                transformParams
-            );
-            
-            // Swap pointers so output becomes input for filter operation
-            unsigned char* temp = d_inputImage;
-            d_inputImage = d_outputImage;
-            d_outputImage = temp;
-        }
-        
-        // Apply filter if requested
-        if (filterType != FilterType::NONE) {
-            if (filterType == FilterType::BLUR || filterType == FilterType::SHARPEN || 
-                filterType == FilterType::EDGE_DETECT || filterType == FilterType::EMBOSS) {
-                // Generate filter kernel
-                int filterWidth = 3;  // Using 3x3 filter
-                float h_filter[9];
-                generateFilter(h_filter, filterWidth, filterType, filterParams);
-                
-                // Apply convolution
-                applyConvolution(
-                    d_inputImage,
-                    d_outputImage,
-                    h_filter,
-                    filterWidth,
-                    inputFrame.cols,
-                    inputFrame.rows,
-                    inputFrame.channels()
-                );
-            } else {
-                // Apply specialized filter
-                applySpecialFilter(
-                    d_inputImage,
-                    d_outputImage,
-                    filterType,
-                    filterParams,
-                    inputFrame.cols,
-                    inputFrame.rows,
-                    inputFrame.channels()
-                );
-            }
-        }
-        
-        // Convert CUDA image back to cv::Mat
-        cudaImageToMat(d_outputImage, outputFrame, inputFrame.cols, inputFrame.rows, inputFrame.channels());
-        
-        // Free CUDA memory
-        delete[] d_inputImage;
-        delete[] d_outputImage;
-        
-        return true;
-    } catch (const std::exception& e) {
-        std::cerr << "Error processing frame: " << e.what() << std::endl;
-        return false;
-    }
-}
-
-// Process batch of frames using CUDA
-bool VideoProcessor::processBatch(
-    const std::vector<cv::Mat>& inputFrames,
-    std::vector<cv::Mat>& outputFrames,
-    FilterType filterType,
-    const FilterParams& filterParams,
-    TransformType transformType,
-    const void* transformParams
-) {
-    // Check if input batch is empty
-    if (inputFrames.empty()) {
-        return false;
-    }
-    
-    try {
-        // Prepare output frames vector
-        outputFrames.resize(inputFrames.size());
-        
-        // Process each frame in the batch
-        // Note: In a more optimized implementation, we would batch process on the GPU
-        // rather than sending each frame separately
-        for (size_t i = 0; i < inputFrames.size(); i++) {
-            if (!processFrame(
-                inputFrames[i], 
-                outputFrames[i], 
-                filterType, 
-                filterParams, 
-                transformType, 
-                transformParams)) {
-                return false;
-            }
-        }
-        
-        return true;
-    } catch (const std::exception& e) {
-        std::cerr << "Error processing batch: " << e.what() << std::endl;
-        return false;
-    }
-}
-
-// Detect motion between consecutive frames
-bool VideoProcessor::detectMotion(cv::Mat& motionMask, float threshold) {
-    // Check if we have a previous frame
-    if (previousFrame.empty()) {
-        return false;
-    }
-    
-    try {
-        // Create motion mask with same size as frames
-        motionMask = cv::Mat(previousFrame.size(), CV_8UC1, cv::Scalar(0));
-        
-        // Convert frames to CUDA format
-        unsigned char* d_prevFrame = matToCudaImage(previousFrame);
-        unsigned char* d_currFrame = matToCudaImage(previousFrame);  // Using same frame for placeholder
-        unsigned char* d_motionMask = new unsigned char[previousFrame.rows * previousFrame.cols];
-        
-        // Detect motion using CUDA
-        ::detectMotion(
-            d_prevFrame,
-            d_currFrame,
-            d_motionMask,
-            previousFrame.cols,
-            previousFrame.rows,
-            threshold
-        );
-        
-        // Convert motion mask back to cv::Mat
-        cv::Mat temp(previousFrame.rows, previousFrame.cols, CV_8UC1);
-        std::memcpy(temp.data, d_motionMask, previousFrame.rows * previousFrame.cols);
-        motionMask = temp;
-        
-        // Free CUDA memory
-        delete[] d_prevFrame;
-        delete[] d_currFrame;
-        delete[] d_motionMask;
-        
-        return true;
-    } catch (const std::exception& e) {
-        std::cerr << "Error detecting motion: " << e.what() << std::endl;
-        return false;
-    }
-}
-
-// Compute optical flow between consecutive frames
-bool VideoProcessor::computeOpticalFlow(cv::Mat& flowImage) {
-    // Check if we have a previous frame
-    if (previousFrame.empty()) {
-        return false;
-    }
-    
-    try {
-        // Create optical flow image with same size as frames
-        flowImage = cv::Mat(previousFrame.size(), CV_8UC3, cv::Scalar(0, 0, 0));
-        
-        // Compute optical flow using CUDA
-        // Note: This is a placeholder. In a real implementation, we would compute optical flow
-        // using a CUDA kernel
-        
-        cv::Mat flow;
-        cv::calcOpticalFlowFarneback(previousFrame, previousFrame, flow, 0.5, 3, 15, 3, 5, 1.2, 0);
-        
-        // Visualize the flow
-        for (int y = 0; y < previousFrame.rows; y += 10) {
-            for (int x = 0; x < previousFrame.cols; x += 10) {
-                const cv::Point2f& fxy = flow.at<cv::Point2f>(y, x);
-                cv::line(flowImage, cv::Point(x, y), 
-                        cv::Point(cvRound(x + fxy.x), cvRound(y + fxy.y)),
-                        cv::Scalar(0, 255, 0), 1, cv::LINE_AA);
-                cv::circle(flowImage, cv::Point(x, y), 1, cv::Scalar(0, 0, 255), -1);
-            }
-        }
-        
-        return true;
-    } catch (const std::exception& e) {
-        std::cerr << "Error computing optical flow: " << e.what() << std::endl;
-        return false;
-    }
-}
-
-// Generate object detection mask
-bool VideoProcessor::detectObjects(cv::Mat& objectMask, float threshold) {
-    // Check if we have a frame
-    if (previousFrame.empty()) {
-        return false;
-    }
-    
-    try {
-        // Create object mask with same size as frames
-        objectMask = cv::Mat(previousFrame.size(), CV_8UC1, cv::Scalar(0));
-        
-        // Convert frame to CUDA format
-        unsigned char* d_frame = matToCudaImage(previousFrame);
-        unsigned char* d_objectMask = new unsigned char[previousFrame.rows * previousFrame.cols];
-        
-        // Detect objects using CUDA
-        ::generateObjectMask(
-            d_frame,
-            d_objectMask,
-            previousFrame.cols,
-            previousFrame.rows,
-            threshold
-        );
-        
-        // Convert object mask back to cv::Mat
-        cv::Mat temp(previousFrame.rows, previousFrame.cols, CV_8UC1);
-        std::memcpy(temp.data, d_objectMask, previousFrame.rows * previousFrame.cols);
-        objectMask = temp;
-        
-        // Free CUDA memory
-        delete[] d_frame;
-        delete[] d_objectMask;
-        
-        return true;
-    } catch (const std::exception& e) {
-        std::cerr << "Error detecting objects: " << e.what() << std::endl;
-        return false;
-    }
-}
-
-// Convert cv::Mat to CUDA-compatible format
-unsigned char* VideoProcessor::matToCudaImage(const cv::Mat& frame) {
-    size_t size = frame.total() * frame.channels();
-    unsigned char* image = new unsigned char[size];
-    std::memcpy(image, frame.data, size);
-    return image;
-}
-
-// Convert CUDA image back to cv::Mat
-void VideoProcessor::cudaImageToMat(unsigned char* cudaImage, cv::Mat& frame, int width, int height, int channels) {
-    // Create cv::Mat
-    frame = cv::Mat(height, width, CV_8UC(channels));
-    
-    // Copy data
-    std::memcpy(frame.data, cudaImage, width * height * channels);
+    close_opencv_video(processor->opencv_processor);
 }
