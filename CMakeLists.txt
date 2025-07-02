@@ -32,10 +32,6 @@ target_compile_options(video_processor PRIVATE
         -O3
         --expt-extended-lambda
         --expt-relaxed-constexpr
-        --diag-suppress esa_on_defaulted_function_ignored
-        --diag-suppress field_without_dll_interface
-        --diag-suppress base_class_has_different_dll_interface
-        --diag-suppress declared_but_not_referenced
         -std=c++14
     >
 )
