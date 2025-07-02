@@ -39,8 +39,8 @@ __global__ void convolutionKernel(
                     int sourceY = y + (fy - halfFilterWidth);
                     
                     // Clamp source position to image boundaries
-                    sourceX = __max(0, __min(sourceX, imageWidth - 1));
-                    sourceY = __max(0, __min(sourceY, imageHeight - 1));
+                    sourceX = (sourceX < 0) ? 0 : ((sourceX >= imageWidth) ? imageWidth - 1 : sourceX);
+                    sourceY = (sourceY < 0) ? 0 : ((sourceY >= imageHeight) ? imageHeight - 1 : sourceY);
                     
                     // Calculate source index
                     int sourceIndex = (sourceY * imageWidth + sourceX) * imageChannels + c;

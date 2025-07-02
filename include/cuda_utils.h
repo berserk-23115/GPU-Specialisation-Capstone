@@ -4,7 +4,6 @@
 #include <cuda_runtime.h>
 #include <iostream>
 #include <string>
-#include <functional>
 
 // CUDA error checking macro
 #define CUDA_CHECK_ERROR(ans) { cudaAssert((ans), __FILE__, __LINE__); }
@@ -79,7 +78,8 @@ inline void calculateOptimalDimensions(
 }
 
 // Benchmark CUDA kernel execution time
-inline float benchmarkKernel(std::function<void()> kernelFunction) {
+template<typename Func>
+inline float benchmarkKernel(Func kernelFunction) {
     cudaEvent_t start, stop;
     CUDA_CHECK_ERROR(cudaEventCreate(&start));
     CUDA_CHECK_ERROR(cudaEventCreate(&stop));
