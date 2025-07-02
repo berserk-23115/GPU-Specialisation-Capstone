@@ -4,6 +4,7 @@
 #include <cuda_runtime.h>
 #include <iostream>
 #include <string>
+#include <functional>
 
 // CUDA error checking macro
 #define CUDA_CHECK_ERROR(ans) { cudaAssert((ans), __FILE__, __LINE__); }

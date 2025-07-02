@@ -39,8 +39,8 @@ __global__ void convolutionKernel(
                     int sourceY = y + (fy - halfFilterWidth);
                     
                     // Clamp source position to image boundaries
-                    sourceX = max(0, min(sourceX, imageWidth - 1));
-                    sourceY = max(0, min(sourceY, imageHeight - 1));
+                    sourceX = __max(0, __min(sourceX, imageWidth - 1));
+                    sourceY = __max(0, __min(sourceY, imageHeight - 1));
                     
                     // Calculate source index
                     int sourceIndex = (sourceY * imageWidth + sourceX) * imageChannels + c;
@@ -52,7 +52,7 @@ __global__ void convolutionKernel(
             }
             
             // Clamp result to [0, 255]
-            sum = max(0.0f, min(sum, 255.0f));
+            sum = fmaxf(0.0f, fminf(sum, 255.0f));
             
             // Write result to output image
             int outputIndex = (y * imageWidth + x) * imageChannels + c;
@@ -111,9 +111,9 @@ __global__ void sepiaKernel(
         float b = static_cast<float>(inputImage[idx + 2]);
         
         // Apply sepia transformation
-        float outputR = min(255.0f, (r * 0.393f + g * 0.769f + b * 0.189f));
-        float outputG = min(255.0f, (r * 0.349f + g * 0.686f + b * 0.168f));
-        float outputB = min(255.0f, (r * 0.272f + g * 0.534f + b * 0.131f));
+        float outputR = fminf(255.0f, (r * 0.393f + g * 0.769f + b * 0.189f));
+        float outputG = fminf(255.0f, (r * 0.349f + g * 0.686f + b * 0.168f));
+        float outputB = fminf(255.0f, (r * 0.272f + g * 0.534f + b * 0.131f));
         
         // Blend with original based on intensity
         outputImage[idx]     = static_cast<unsigned char>((1.0f - intensity) * r + intensity * outputR);
@@ -169,9 +169,9 @@ __global__ void motionDetectionKernel(
         int idx = (y * width + x) * 3;
         
         // Calculate difference between frames
-        float diffR = abs(static_cast<float>(currentFrame[idx]) - static_cast<float>(previousFrame[idx]));
-        float diffG = abs(static_cast<float>(currentFrame[idx + 1]) - static_cast<float>(previousFrame[idx + 1]));
-        float diffB = abs(static_cast<float>(currentFrame[idx + 2]) - static_cast<float>(previousFrame[idx + 2]));
+        float diffR = fabsf(static_cast<float>(currentFrame[idx]) - static_cast<float>(previousFrame[idx]));
+        float diffG = fabsf(static_cast<float>(currentFrame[idx + 1]) - static_cast<float>(previousFrame[idx + 1]));
+        float diffB = fabsf(static_cast<float>(currentFrame[idx + 2]) - static_cast<float>(previousFrame[idx + 2]));
         
         // Calculate average difference
         float avgDiff = (diffR + diffG + diffB) / 3.0f;
@@ -210,9 +210,9 @@ __global__ void cartoonKernel(
         float g = static_cast<float>(inputImage[idx + 1]);
         float b = static_cast<float>(inputImage[idx + 2]);
         
-        float quantR = round(r * quantizationLevels / 255.0f) * (255.0f / quantizationLevels);
-        float quantG = round(g * quantizationLevels / 255.0f) * (255.0f / quantizationLevels);
-        float quantB = round(b * quantizationLevels / 255.0f) * (255.0f / quantizationLevels);
+        float quantR = roundf(r * quantizationLevels / 255.0f) * (255.0f / quantizationLevels);
+        float quantG = roundf(g * quantizationLevels / 255.0f) * (255.0f / quantizationLevels);
+        float quantB = roundf(b * quantizationLevels / 255.0f) * (255.0f / quantizationLevels);
         
         // Apply edge darkening
         float edgeFactor = edgeValue > 50.0f ? 0.5f : 1.0f;
@@ -247,7 +247,7 @@ __global__ void nightVisionKernel(
         
         // Add random noise
         float random = ((x ^ y) & 0xFF) / 255.0f;  // Simple pseudorandom function
-        gray = min(255.0f, gray + random * noise * 50.0f);
+        gray = fminf(255.0f, gray + random * noise * 50.0f);
         
         // Apply night vision green tint
         float nvR = gray * 0.1f;
@@ -255,16 +255,16 @@ __global__ void nightVisionKernel(
         float nvB = gray * 0.1f;
         
         // Clamp values
-        nvR = min(255.0f, max(0.0f, nvR));
-        nvG = min(255.0f, max(0.0f, nvG));
-        nvB = min(255.0f, max(0.0f, nvB));
+        nvR = fminf(255.0f, fmaxf(0.0f, nvR));
+        nvG = fminf(255.0f, fmaxf(0.0f, nvG));
+        nvB = fminf(255.0f, fmaxf(0.0f, nvB));
         
         // Add vignette effect (darker at edges)
         float dx = x / static_cast<float>(imageWidth) - 0.5f;
         float dy = y / static_cast<float>(imageHeight) - 0.5f;
-        float dist = sqrt(dx * dx + dy * dy);
+        float dist = sqrtf(dx * dx + dy * dy);
         float vignette = 1.0f - dist * 1.5f;
-        vignette = max(0.0f, vignette);
+        vignette = fmaxf(0.0f, vignette);
         
         nvR *= vignette;
         nvG *= vignette;
