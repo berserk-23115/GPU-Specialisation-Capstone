@@ -17,33 +17,32 @@ file(GLOB SOURCES "src/*.cu" "src/*.cpp")
 # Create executable
 add_executable(video_processor ${SOURCES})
 
-# Set C++ and CUDA standard for the target
+# Set C++ standard for CXX files (e.g., .cpp)
 set_target_properties(video_processor PROPERTIES
     CXX_STANDARD 14
     CXX_STANDARD_REQUIRED ON
-    CUDA_STANDARD 14
-    CUDA_STANDARD_REQUIRED ON
 )
 
-# Set compiler flags for the target
+# Set compile options for CUDA files, including for the host compiler
 target_compile_options(video_processor PRIVATE
     $<$<COMPILE_LANGUAGE:CXX>:-O3>
     $<$<COMPILE_LANGUAGE:CUDA>:
         -O3
         --expt-extended-lambda
         --expt-relaxed-constexpr
-        -std=c++14
+        -std=c++14                 # For nvcc's device compiler
+        -Xcompiler "-std=c++14"    # Pass -std=c++14 to the host compiler
     >
 )
+
+# Link libraries
+target_link_libraries(video_processor ${OpenCV_LIBS})
 
 # Set properties for CUDA
 set_target_properties(video_processor PROPERTIES
     CUDA_RUNTIME_LIBRARY Static
     CUDA_RESOLVE_DEVICE_SYMBOLS ON
 )
-
-# Link libraries
-target_link_libraries(video_processor ${OpenCV_LIBS})
 
 # Copy data directory to build directory
 file(COPY ${CMAKE_SOURCE_DIR}/data DESTINATION ${CMAKE_BINARY_DIR})
