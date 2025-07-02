@@ -1,6 +1,14 @@
 cmake_minimum_required(VERSION 3.18)
 project(CUDAVideoProcessor LANGUAGES CXX CUDA)
 
+# Set C++ standard
+set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Explicitly tell nvcc to use C++14 for its host compiler (gcc)
+# This is the most critical fix.
+set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -std=c++14 -Xcompiler=-std=c++14")
+
 # Find packages
 find_package(OpenCV REQUIRED)
 
@@ -16,24 +24,6 @@ file(GLOB SOURCES "src/*.cu" "src/*.cpp")
 
 # Create executable
 add_executable(video_processor ${SOURCES})
-
-# Set C++ standard for CXX files (e.g., .cpp)
-set_target_properties(video_processor PROPERTIES
-    CXX_STANDARD 14
-    CXX_STANDARD_REQUIRED ON
-)
-
-# Set compile options for CUDA files, including for the host compiler
-target_compile_options(video_processor PRIVATE
-    $<$<COMPILE_LANGUAGE:CXX>:-O3>
-    $<$<COMPILE_LANGUAGE:CUDA>:
-        -O3
-        --expt-extended-lambda
-        --expt-relaxed-constexpr
-        -std=c++14                 # For nvcc's device compiler
-        -Xcompiler "-std=c++14"    # Pass -std=c++14 to the host compiler
-    >
-)
 
 # Link libraries
 target_link_libraries(video_processor ${OpenCV_LIBS})
