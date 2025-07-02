@@ -1,0 +1,80 @@
+# Build directories
+build/
+bin/
+lib/
+out/
+cmake-build-*/
+.vs/
+
+# Compiled Object files
+*.slo
+*.lo
+*.o
+*.obj
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app
+video_processor
+
+# CMake generated files
+CMakeCache.txt
+CMakeFiles/
+*.cmake
+Makefile
+
+# Editor and IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Debug files
+*.dSYM/
+*.su
+
+# Data files
+data/input/*.mp4
+data/input/*.avi
+data/input/*.mov
+data/input/*.mkv
+data/output/*.mp4
+data/output/*.avi
+data/output/*.mov
+data/output/*.mkv
+
+# Except sample videos/images for testing
+!data/input/sample*.*
+
+# Dependency directories
+vcpkg/
+external/
+
+# CUDA specific
+*.i
+*.ii
+*.gpu
+*.ptx
+*.cubin
+*.fatbin
+
+# Log files
+*.log 
