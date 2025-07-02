@@ -1,34 +1,44 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.18)
 project(CUDAVideoProcessor LANGUAGES CXX CUDA)
 
 # Set C++ standard
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CUDA_STANDARD 17)
+set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 
 # Find packages
-find_package(CUDA REQUIRED)
 find_package(OpenCV REQUIRED)
 
 # Include directories
-include_directories(${CUDA_INCLUDE_DIRS})
 include_directories(${OpenCV_INCLUDE_DIRS})
 include_directories(${CMAKE_SOURCE_DIR}/include)
 
-# Set CUDA flags
-set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS} -std=c++17 -O3)
+# Set CUDA architecture
+set(CMAKE_CUDA_ARCHITECTURES 75)
 
-# Add CUDA source files
+# Set compiler flags
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3")
+set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -O3 --expt-relaxed-constexpr")
+
+# Add source files
 file(GLOB SOURCES "src/*.cu" "src/*.cpp")
 
 # Create executable
-cuda_add_executable(video_processor ${SOURCES})
+add_executable(video_processor ${SOURCES})
+
+# Set properties for CUDA
+set_target_properties(video_processor PROPERTIES
+    CUDA_RUNTIME_LIBRARY Static
+    CUDA_RESOLVE_DEVICE_SYMBOLS ON
+)
 
 # Link libraries
-target_link_libraries(video_processor ${CUDA_LIBRARIES} ${OpenCV_LIBS})
+target_link_libraries(video_processor ${OpenCV_LIBS})
 
 # Copy data directory to build directory
 file(COPY ${CMAKE_SOURCE_DIR}/data DESTINATION ${CMAKE_BINARY_DIR})
 
-# Print OpenCV version
+# Print versions
 message(STATUS "OpenCV version: ${OpenCV_VERSION}")
-message(STATUS "CUDA version: ${CUDA_VERSION}") 
+message(STATUS "CUDA version: ${CMAKE_CUDA_COMPILER_VERSION}") 

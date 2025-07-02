@@ -1,6 +1,8 @@
 #include "video_io.h"
 #include "cuda_utils.h"
+#include "kernels.h"
 #include <iostream>
+#include <cstring>
 
 // Constructor
 VideoProcessor::VideoProcessor() 
@@ -319,7 +321,7 @@ bool VideoProcessor::detectMotion(cv::Mat& motionMask, float threshold) {
         unsigned char* d_motionMask = new unsigned char[previousFrame.rows * previousFrame.cols];
         
         // Detect motion using CUDA
-        detectMotion(
+        ::detectMotion(
             d_prevFrame,
             d_currFrame,
             d_motionMask,
@@ -397,7 +399,7 @@ bool VideoProcessor::detectObjects(cv::Mat& objectMask, float threshold) {
         unsigned char* d_objectMask = new unsigned char[previousFrame.rows * previousFrame.cols];
         
         // Detect objects using CUDA
-        generateObjectMask(
+        ::generateObjectMask(
             d_frame,
             d_objectMask,
             previousFrame.cols,
